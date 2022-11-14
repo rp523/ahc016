@@ -1603,7 +1603,7 @@ use auto_sort_vec::AutoSortVec;
 /*************************************************************************************
 *************************************************************************************/
 use std::fs::File;
-use std::io::{self, BufRead, Write, BufReader};
+use std::io::{self, BufRead, BufReader, Write};
 const NMIN: usize = 4;
 const NMAX: usize = 100;
 const MMIN: usize = 10;
@@ -1611,8 +1611,8 @@ const MMAX: usize = 100;
 const EPSUNIT: f64 = 0.01_f64;
 const EPSMIN: usize = 0;
 const EPSMAX: usize = 40;
-
-struct Student{
+const INF: usize = 1_usize << 60;
+struct Student {
     ref_features: Vec<Vec<f64>>,
 }
 impl Student {
@@ -1623,29 +1623,17 @@ impl Student {
             Student::convert(s, &mut g, n);
             features.push(Student::calc_feature(&g, n));
         }
-        Student{
+        Student {
             ref_features: features,
         }
     }
     fn calc_feature(g: &[Vec<usize>], n: usize) -> Vec<f64> {
-        let mut uf = UnionFind::new(n);
-        for (i, to) in g.iter().enumerate() {
-            for j in to {
-                uf.unite(i, *j);
-            }
-        }
-        let mut roots = BTreeMap::<i64, usize>::new();
-        for i in 0..n {
-            let r = roots.entry(- (uf.group_size(i) as i64)).or_insert(uf.root(i));
-            *r = uf.root(i);
-        }
-
-        fn get_end(g: &[Vec<usize>], n: usize, r: usize) -> usize {
-            let mut dist = vec![1_usize << 60; n];
-            dist[r] = 0;
+        fn get_end(g: &[Vec<usize>], n: usize, ini: usize) -> usize {
+            let mut dist = vec![INF; n];
+            dist[ini] = 0;
             let mut que = VecDeque::<usize>::new();
-            que.push_back(r);
-            let mut max_dist_i = r;
+            que.push_back(ini);
+            let mut max_dist_i = ini;
             let mut max_dist = 0_usize;
             while let Some(v) = que.pop_front() {
                 for &nv in &g[v] {
@@ -1661,9 +1649,8 @@ impl Student {
             max_dist_i
         }
         fn get_centers(g: &[Vec<usize>], n: usize, e0: usize, e1: usize) -> Vec<usize> {
-            fn get_distance(g: &[Vec<usize>], n: usize, ini: usize) -> Vec<i64> {
-                let inf = 1_i64 << 60;
-                let mut dist = vec![inf; n];
+            fn get_distance(g: &[Vec<usize>], n: usize, ini: usize) -> Vec<usize> {
+                let mut dist = vec![INF; n];
                 dist[ini] = 0;
                 let mut que = VecDeque::<usize>::new();
                 que.push_back(ini);
@@ -1679,67 +1666,85 @@ impl Student {
             }
             let dist0 = get_distance(g, n, e0);
             let dist1 = get_distance(g, n, e1);
-            let mut dif_min = 1_i64 << 60;
-            for (i, (&d0, &d1)) in dist0.iter().zip(dist1.iter()).enumerate() {
-                let dif = (d0 - d1).abs();
+            let mut dif_min = INF;
+            for (&d0, &d1) in dist0.iter().zip(dist1.iter()) {
+                let dif = (d0 as i64 - d1 as i64).abs() as usize;
                 dif_min.chmin(dif);
             }
             let mut centers = vec![];
             for (i, (d0, d1)) in dist0.into_iter().zip(dist1.into_iter()).enumerate() {
-                let dif = (d0 - d1).abs();
+                let dif = (d0 as i64 - d1 as i64).abs() as usize;
                 if dif_min == dif {
                     centers.push(i);
                 }
             }
             centers
         }
-        fn count_child(g: &[Vec<usize>], n: usize, ini: usize) -> Vec<usize> {
-            fn dfs(g: &[Vec<usize>], v: usize, dist: &mut [usize], child: &[usize]) -> usize{
-                let mut c = 1;
+        fn vote(g: &[Vec<usize>], n: usize, ini: usize, pole: &mut [(usize, usize)]) {
+            let mut dist = vec![INF; n];
+            dist[ini] = 0;
+            let mut que = VecDeque::<usize>::new();
+            que.push_back(ini);
+            pole[ini] = (pole[ini].0, pole[ini].1 + 1);
+            while let Some(v) = que.pop_front() {
                 let nd = dist[v] + 1;
                 for &nv in g[v].iter() {
                     if dist[nv].chmin(nd) {
-                        c += dfs(g, nv, dist, child);
+                        que.push_back(nv);
+                        pole[nv] = (pole[nv].0 + dist[nv], pole[nv].1 + 1);
                     }
                 }
-                c
             }
-            let inf = 1_usize << 60;
-            let mut dist = vec![inf; n];
-            dist[ini] = 0;
-            let mut child = vec![0; n];
-            dfs(g, ini, &mut dist, &mut child);
-            child
         }
-        fn vote_distance(g: &[Vec<usize>], v: usize, child: &[usize], dist: &mut [usize], pole: &mut [(usize, usize)]) {
-            fn dfs(g: &[Vec<usize>], v: usize, child: &[usize], dist: &mut [usize], pole: &mut [(usize, usize)]) {
-                let mut que = BinaryHeap::<(usize, usize)>::new();
-                let nd = dist[v] + 1;
-                for &nv in g[v].iter() {
-                    if dist[nv] == inf {
-                        que.push((child[nv], nv));
-                    }
-                }
-                while let Some((_cn, nv)) = que.pop() {
 
-                }
+        let mut uf = UnionFind::new(n);
+        for (i, to) in g.iter().enumerate() {
+            for &j in to {
+                uf.unite(i, j);
             }
-            let inf = 1_usize << 60;
         }
-        let mut ret = vec![0_f64; n];
+        let mut roots = BTreeMap::<i64, usize>::new();
+        for i in 0..n {
+            let r = roots
+                .entry(-(uf.group_size(i) as i64))
+                .or_insert(uf.root(i));
+            *r = uf.root(i);
+        }
+
+        let mut pole = vec![(0_usize, 0_usize); n];
         for (_ngs, r) in roots.iter() {
             let end0 = get_end(g, n, *r);
             let end1 = get_end(g, n, end0);
 
             let centers = get_centers(g, n, end0, end1);
             for center in centers {
-                let child = count_child(g, n, center);
+                vote(g, n, center, &mut pole);
             }
-            // 部分木のサイズが大きいところから掘るDFS
-            // 帰りがけ順にdistを記録していく
         }
 
-        ret
+        let mut f = pole
+            .into_iter()
+            .map(|(e, d)| {
+                if d == 0 {
+                    n as f64
+                } else {
+                    e as f64 / d as f64
+                }
+            })
+            .collect::<Vec<f64>>();
+        loop {
+            let mut swp = false;
+            for i in 1..n {
+                if f[i - 1] > f[i] {
+                    f.swap(i, i - 1);
+                    swp = true;
+                }
+            }
+            if !swp {
+                break;
+            }
+        }
+        f
     }
     fn convert(s: &[char], g: &mut [Vec<usize>], n: usize) {
         let mut idx = 0;
@@ -1754,13 +1759,16 @@ impl Student {
         }
     }
     fn distance(f1: &[f64], f2: &[f64]) -> f64 {
-        f1.iter().zip(f2.iter()).map(|(v1, v2)| (v1 - v2) * (v1 - v2)).reduce(|x, y| x + y).unwrap()
+        f1.iter()
+            .zip(f2.iter())
+            .map(|(v1, v2)| (v1 - v2) * (v1 - v2))
+            .sum::<f64>()//reduce(|x, y| x + y)
     }
     pub fn select(&self, s: &[char], n: usize, m: usize) -> usize {
         let mut g = vec![vec![]; n];
         Student::convert(s, &mut g, n);
         let mut sel = 0;
-        let mut min_dist = (1_i64 << 60) as f64;
+        let mut min_dist = INF as f64;
         let f = Student::calc_feature(&g, n);
         for (fi, ref_feature) in self.ref_features.iter().enumerate().take(m) {
             if min_dist.chmin(Student::distance(&f, ref_feature)) {
@@ -1780,12 +1788,12 @@ impl Teacher {
         Teacher {
             vs: vec![vec![]; MMAX],
             n: 0,
-            rand: XorShift64::new()
+            rand: XorShift64::new(),
         }
     }
     pub fn regenerate(&mut self) {
-        self.n = NMAX;//self.rand.next_usize() % (NMAX - NMIN) + NMIN;
-        for (_mi, v) in self.vs.iter_mut().enumerate() {
+        self.n = NMAX; //self.rand.next_usize() % (NMAX - NMIN) + NMIN;
+        for v in self.vs.iter_mut() {
             v.clear();
             let mut uf = UnionFind::new(self.n);
             let n2 = self.n * self.n;
@@ -1798,7 +1806,7 @@ impl Teacher {
                 let idx = self.rand.next_usize() % remain.len();
                 remain.remove_value(remain.at(idx));
                 let (i, j) = (idx / self.n, idx % self.n);
-                if i == j {
+                if i >= j {
                     continue;
                 }
                 let (i, j) = (min(i, j), max(i, j));
@@ -1806,7 +1814,7 @@ impl Teacher {
                 g[i].insert(j);
                 g[j].insert(i);
             }
-            for (i, to) in g.iter().enumerate() {
+            for (i, to) in g.into_iter().enumerate() {
                 for j in (i + 1)..self.n {
                     if to.contains(&j) {
                         v.push('1');
@@ -1816,7 +1824,9 @@ impl Teacher {
                 }
             }
             debug_assert!(v.len() == (self.n * (self.n - 1)) / 2);
-            debug_assert!(v.iter().map(|&c| (c as u8 - b'0') as usize).sum::<usize>() >= self.n - 1);
+            debug_assert!(
+                v.iter().map(|&c| (c as u8 - b'0') as usize).sum::<usize>() >= self.n - 1
+            );
         }
     }
     fn modify(&mut self, s: usize, eps: f64) -> Vec<char> {
@@ -1840,11 +1850,10 @@ impl Teacher {
         let mut cnt = 0;
         let mut corr = 0;
         for m in (MMIN..=MMAX).step_by(10) {
-            debug!(m);
-            for e in (EPSMIN..=EPSMAX).step_by(5) {
+            for e in (EPSMIN..=EPSMAX).rev().take(1) {
                 let eps = e as f64 * EPSUNIT;
                 for s in 0..m {
-                    for _t in 0..1 {
+                    for _t in (0..100).take(1) {
                         let h = self.modify(s, eps);
                         let t = student.select(&h, self.n, m);
                         if s == t {
@@ -1866,6 +1875,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         let rate = teacher.trial();
         debug!(rate);
         if best_rate.chmax(rate) {
+            debug!("best_table.txt");
             let mut file = File::create("best_table.txt")?;
             for x in teacher.vs.iter() {
                 for c in x {
