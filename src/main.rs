@@ -1660,12 +1660,81 @@ impl Student {
             }
             max_dist_i
         }
+        fn get_centers(g: &[Vec<usize>], n: usize, e0: usize, e1: usize) -> Vec<usize> {
+            fn get_distance(g: &[Vec<usize>], n: usize, ini: usize) -> Vec<i64> {
+                let inf = 1_i64 << 60;
+                let mut dist = vec![inf; n];
+                dist[ini] = 0;
+                let mut que = VecDeque::<usize>::new();
+                que.push_back(ini);
+                while let Some(v) = que.pop_front() {
+                    let nd = dist[v] + 1;
+                    for &nv in g[v].iter() {
+                        if dist[nv].chmin(nd) {
+                            que.push_back(nv);
+                        }
+                    }
+                }
+                dist
+            }
+            let dist0 = get_distance(g, n, e0);
+            let dist1 = get_distance(g, n, e1);
+            let mut dif_min = 1_i64 << 60;
+            for (i, (&d0, &d1)) in dist0.iter().zip(dist1.iter()).enumerate() {
+                let dif = (d0 - d1).abs();
+                dif_min.chmin(dif);
+            }
+            let mut centers = vec![];
+            for (i, (d0, d1)) in dist0.into_iter().zip(dist1.into_iter()).enumerate() {
+                let dif = (d0 - d1).abs();
+                if dif_min == dif {
+                    centers.push(i);
+                }
+            }
+            centers
+        }
+        fn count_child(g: &[Vec<usize>], n: usize, ini: usize) -> Vec<usize> {
+            fn dfs(g: &[Vec<usize>], v: usize, dist: &mut [usize], child: &[usize]) -> usize{
+                let mut c = 1;
+                let nd = dist[v] + 1;
+                for &nv in g[v].iter() {
+                    if dist[nv].chmin(nd) {
+                        c += dfs(g, nv, dist, child);
+                    }
+                }
+                c
+            }
+            let inf = 1_usize << 60;
+            let mut dist = vec![inf; n];
+            dist[ini] = 0;
+            let mut child = vec![0; n];
+            dfs(g, ini, &mut dist, &mut child);
+            child
+        }
+        fn vote_distance(g: &[Vec<usize>], v: usize, child: &[usize], dist: &mut [usize], pole: &mut [(usize, usize)]) {
+            fn dfs(g: &[Vec<usize>], v: usize, child: &[usize], dist: &mut [usize], pole: &mut [(usize, usize)]) {
+                let mut que = BinaryHeap::<(usize, usize)>::new();
+                let nd = dist[v] + 1;
+                for &nv in g[v].iter() {
+                    if dist[nv] == inf {
+                        que.push((child[nv], nv));
+                    }
+                }
+                while let Some((_cn, nv)) = que.pop() {
+
+                }
+            }
+            let inf = 1_usize << 60;
+        }
         let mut ret = vec![0_f64; n];
         for (_ngs, r) in roots.iter() {
             let end0 = get_end(g, n, *r);
             let end1 = get_end(g, n, end0);
 
-            // 中心を求めて根とする
+            let centers = get_centers(g, n, end0, end1);
+            for center in centers {
+                let child = count_child(g, n, center);
+            }
             // 部分木のサイズが大きいところから掘るDFS
             // 帰りがけ順にdistを記録していく
         }
