@@ -1849,7 +1849,7 @@ impl Teacher {
         let student = Student::new(&self.vs, self.n);
         let mut cnt = 0;
         let mut corr = 0;
-        for m in (MMIN..=MMAX).step_by(10) {
+        for m in (MMIN..=MMAX).step_by(1) {
             for e in (EPSMIN..=EPSMAX).rev().take(1) {
                 let eps = e as f64 * EPSUNIT;
                 for s in 0..m {
@@ -1873,9 +1873,9 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     loop {
         teacher.regenerate();
         let rate = teacher.trial();
-        debug!(rate);
+        println!("rate = {}", rate);
         if best_rate.chmax(rate) {
-            debug!("best_table.txt");
+            println!("updated");
             let mut file = File::create("best_table.txt")?;
             for x in teacher.vs.iter() {
                 for c in x {
