@@ -1616,9 +1616,9 @@ struct Student{
     ref_features: Vec<Vec<f64>>,
 }
 impl Student {
-    pub fn new(v: &Vec<Vec<char>>, n: usize) -> Student {
+    pub fn new(v: &[Vec<char>], n: usize) -> Student {
         let mut features = vec![];
-        for s in v.into_iter() {
+        for s in v.iter() {
             let mut g = vec![vec![]; n];
             Student::convert(s, &mut g, n);
             features.push(Student::calc_feature(&g, n));
@@ -1627,19 +1627,20 @@ impl Student {
             ref_features: features,
         }
     }
-    fn calc_feature(g: &Vec<Vec<usize>>, n: usize) -> Vec<f64> {
+    fn calc_feature(g: &[Vec<usize>], n: usize) -> Vec<f64> {
         let mut uf = UnionFind::new(n);
-        for (i, to) in g.into_iter().enumerate() {
+        for (i, to) in g.iter().enumerate() {
             for j in to {
                 uf.unite(i, *j);
             }
         }
         let mut roots = BTreeMap::<i64, usize>::new();
         for i in 0..n {
-            let _ = roots.entry(- (uf.group_size(i) as i64)).or_insert(uf.root(i));
+            let r = roots.entry(- (uf.group_size(i) as i64)).or_insert(uf.root(i));
+            *r = uf.root(i);
         }
 
-        fn get_end(g: &Vec<Vec<usize>>, n: usize, r: usize) -> usize {
+        fn get_end(g: &[Vec<usize>], n: usize, r: usize) -> usize {
             let mut dist = vec![1_usize << 60; n];
             dist[r] = 0;
             let mut que = VecDeque::<usize>::new();
@@ -1659,7 +1660,7 @@ impl Student {
             }
             max_dist_i
         }
-        let mut ret = vec![];
+        let mut ret = vec![0_f64; n];
         for (_ngs, r) in roots.iter() {
             let end0 = get_end(g, n, *r);
             let end1 = get_end(g, n, end0);
@@ -1671,7 +1672,7 @@ impl Student {
 
         ret
     }
-    fn convert(s: &Vec<char>, g: &mut Vec<Vec<usize>>, n: usize) {
+    fn convert(s: &[char], g: &mut [Vec<usize>], n: usize) {
         let mut idx = 0;
         for i in 0..n {
             for j in (i + 1)..n {
@@ -1683,16 +1684,16 @@ impl Student {
             }
         }
     }
-    fn distance(f1: &Vec<f64>, f2: &Vec<f64>) -> f64 {
-        f1.into_iter().zip(f2.into_iter()).map(|(v1, v2)| (v1 - v2) * (v1 - v2)).reduce(|x, y| x + y).unwrap()
+    fn distance(f1: &[f64], f2: &[f64]) -> f64 {
+        f1.iter().zip(f2.iter()).map(|(v1, v2)| (v1 - v2) * (v1 - v2)).reduce(|x, y| x + y).unwrap()
     }
-    pub fn select(&self, s: &Vec<char>, n: usize) -> usize {
+    pub fn select(&self, s: &[char], n: usize, m: usize) -> usize {
         let mut g = vec![vec![]; n];
         Student::convert(s, &mut g, n);
         let mut sel = 0;
         let mut min_dist = (1_i64 << 60) as f64;
         let f = Student::calc_feature(&g, n);
-        for (fi, ref_feature) in self.ref_features.iter().enumerate() {
+        for (fi, ref_feature) in self.ref_features.iter().enumerate().take(m) {
             if min_dist.chmin(Student::distance(&f, ref_feature)) {
                 sel = fi;
             }
@@ -1701,33 +1702,57 @@ impl Student {
     }
 }
 struct Teacher {
-    v: Vec<Vec<char>>,
+    vs: Vec<Vec<char>>,
     n: usize,
     rand: XorShift64,
 }
 impl Teacher {
     pub fn new() -> Teacher {
         Teacher {
-            v: vec![],
+            vs: vec![vec![]; MMAX],
             n: 0,
             rand: XorShift64::new()
         }
     }
     pub fn regenerate(&mut self) {
-        self.v.clear();
-        self.n = self.rand.next_usize() % (NMAX - NMIN) + NMIN;
-        while self.v.len() < MMAX {
-            let mut cv: Vec<char> = vec![];
-            let string_len = (self.n * (self.n - 1)) / 2;
-            while cv.len() < string_len {
-                cv.push(((self.rand.next_usize() % 2) as u8 + b'0') as char);
+        self.n = NMAX;//self.rand.next_usize() % (NMAX - NMIN) + NMIN;
+        for (_mi, v) in self.vs.iter_mut().enumerate() {
+            v.clear();
+            let mut uf = UnionFind::new(self.n);
+            let n2 = self.n * self.n;
+            let mut remain = AutoSortVec::new(n2);
+            for i in 0..n2 {
+                remain.push(i);
             }
-            self.v.push(cv);
+            let mut g = vec![HashSet::<usize>::new(); self.n];
+            while uf.group_num() != 1 {
+                let idx = self.rand.next_usize() % remain.len();
+                remain.remove_value(remain.at(idx));
+                let (i, j) = (idx / self.n, idx % self.n);
+                if i == j {
+                    continue;
+                }
+                let (i, j) = (min(i, j), max(i, j));
+                uf.unite(i, j);
+                g[i].insert(j);
+                g[j].insert(i);
+            }
+            for (i, to) in g.iter().enumerate() {
+                for j in (i + 1)..self.n {
+                    if to.contains(&j) {
+                        v.push('1');
+                    } else {
+                        v.push('0');
+                    }
+                }
+            }
+            debug_assert!(v.len() == (self.n * (self.n - 1)) / 2);
+            debug_assert!(v.iter().map(|&c| (c as u8 - b'0') as usize).sum::<usize>() >= self.n - 1);
         }
     }
     fn modify(&mut self, s: usize, eps: f64) -> Vec<char> {
         let mut ret: Vec<char> = vec![];
-        let org = &self.v[s];
+        let org = &self.vs[s];
         for &c in org {
             if self.rand.next_f64() < eps {
                 if c == '0' {
@@ -1742,17 +1767,17 @@ impl Teacher {
         ret
     }
     pub fn trial(&mut self) -> f64 {
-        let student = Student::new(&self.v, self.n);
+        let student = Student::new(&self.vs, self.n);
         let mut cnt = 0;
         let mut corr = 0;
-        for m in MMIN..=MMAX {
+        for m in (MMIN..=MMAX).step_by(10) {
             debug!(m);
             for e in (EPSMIN..=EPSMAX).step_by(5) {
                 let eps = e as f64 * EPSUNIT;
                 for s in 0..m {
                     for _t in 0..1 {
                         let h = self.modify(s, eps);
-                        let t = student.select(&h, self.n);
+                        let t = student.select(&h, self.n, m);
                         if s == t {
                             corr += 1;
                         }
@@ -1769,13 +1794,15 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     let mut best_rate = -1_f64;
     loop {
         teacher.regenerate();
-        if teacher.trial() > best_rate {
+        let rate = teacher.trial();
+        debug!(rate);
+        if best_rate.chmax(rate) {
             let mut file = File::create("best_table.txt")?;
-            for x in teacher.v.iter() {
+            for x in teacher.vs.iter() {
                 for c in x {
                     write!(file, "{}", c)?;
                 }
-                writeln!(file, "");
+                writeln!(file)?;
             }
         }
     }
