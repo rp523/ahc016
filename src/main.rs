@@ -809,6 +809,8 @@ impl<T: Copy + Ord> CoordinateCompress<T> for Vec<T> {
 }
 
 mod xor_shift_64 {
+    use crate::auto_sort_vec::AutoSortVec;
+    use std::collections::BTreeSet;
     pub struct XorShift64(u64);
     impl XorShift64 {
         pub fn new() -> Self {
@@ -826,6 +828,29 @@ mod xor_shift_64 {
         }
         pub fn next_usize(&mut self) -> usize {
             self.next_u64() as usize
+        }
+        pub fn gen_rand_idxs(&mut self, n: usize) -> Vec<usize>{
+            let mut remain = AutoSortVec::new(n);
+            for i in 0..n {
+                remain.push(i);
+            }
+            let mut ret = vec![];
+            while ret.len() < n {
+                let idx = self.next_usize() % remain.len();
+                let val = remain.at(idx);
+                ret.push(val);
+                remain.remove_value(val);
+            }
+            if cfg!(debug_assertions) {
+                let mut st = BTreeSet::<usize>::new();
+                for &v in &ret {
+                    st.insert(v);
+                }
+                assert!(*st.iter().next().unwrap() == 0);
+                assert!(*st.iter().next_back().unwrap() == n - 1);
+                assert!(st.len() == n);
+            }
+            ret
         }
     }
 }
@@ -1797,14 +1822,10 @@ impl Teacher {
             v.clear();
             let mut uf = UnionFind::new(self.n);
             let n2 = self.n * self.n;
-            let mut remain = AutoSortVec::new(n2);
-            for i in 0..n2 {
-                remain.push(i);
-            }
+            let mut rand_idxs = self.rand.gen_rand_idxs(n2);
             let mut g = vec![HashSet::<usize>::new(); self.n];
             while uf.group_num() != 1 {
-                let idx = self.rand.next_usize() % remain.len();
-                remain.remove_value(remain.at(idx));
+                let idx = rand_idxs.pop().unwrap();
                 let (i, j) = (idx / self.n, idx % self.n);
                 if i >= j {
                     continue;
@@ -1830,20 +1851,42 @@ impl Teacher {
         }
     }
     fn modify(&mut self, s: usize, eps: f64) -> Vec<char> {
-        let mut ret: Vec<char> = vec![];
         let org = &self.vs[s];
-        for &c in org {
-            if self.rand.next_f64() < eps {
-                if c == '0' {
-                    ret.push('1');
-                } else {
-                    ret.push('0');
+        let n = self.n;
+        let rand_idxs = self.rand.gen_rand_idxs(n);
+        let ij = {
+            let mut ij = vec![HashSet::<usize>::new(); n];
+            let mut cnt = 0;
+            for i in 0..n {
+                for j in (i + 1)..n {
+                    if org[cnt] == '1' {
+                        ij[i].insert(j);
+                    }
+                    cnt += 1;
                 }
-            } else {
-                ret.push(c);
             }
+            ij
+        };
+
+        {
+            let mut vc = vec![];
+            for i1 in 0..n {
+                let i0 = rand_idxs[i1];
+                for j1 in (i1 + 1)..n {
+                    let j0 = rand_idxs[j1];
+                    let mut val = 0;
+                    if ij[i0].contains(&j0) 
+                    {
+                        val = 1;
+                    }
+                    if self.rand.next_f64() < eps {
+                        val = 1 - val;
+                    }
+                    vc.push((val as u8 + b'0') as char);
+                }
+            }
+            vc
         }
-        ret
     }
     pub fn trial(&mut self) -> f64 {
         let student = Student::new(&self.vs, self.n);
@@ -1864,7 +1907,9 @@ impl Teacher {
                 }
             }
         }
-        corr as f64 / cnt as f64
+        let rate = corr as f64 / cnt as f64;
+        println!("rate = {}/{} = {}", corr, cnt, rate);
+        rate
     }
 }
 fn main() -> Result<(), Box<dyn std::error::Error>> {
@@ -1873,7 +1918,6 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     loop {
         teacher.regenerate();
         let rate = teacher.trial();
-        println!("rate = {}", rate);
         if best_rate.chmax(rate) {
             println!("updated");
             let mut file = File::create("best_table.txt")?;
